@@ -1,8 +1,42 @@
+root@ip-172-31-27-64:~/aws-pipeline-tf# cat main.tf 
 data "aws_codecommit_repository" "repo" {
   repository_name = var.repo_name
 }
 resource "aws_codebuild_project" "example" {
   name         = var.codebuild_project_name
+  service_role = aws_iam_role.example.arn
+  environment {
+    compute_type = "BUILD_GENERAL1_SMALL"
+    image        = "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+    type         = "LINUX_CONTAINER"
+  }
+  source {
+    type            = "CODECOMMIT"
+    location        = data.aws_codecommit_repository.repo.clone_url_http
+    git_clone_depth = 1
+    buildspec       = <<-EOF
+      version: 0.2
+      phases:
+        build:
+          commands:
+            - sudo yum update -y
+            - sudo yum install -y unzip
+            - curl -O https://releases.hashicorp.com/terraform/0.15.4/terraform_0.15.4_linux_amd64.zip
+            - unzip terraform_0.15.4_linux_amd64.zip
+            - sudo mv terraform /usr/local/bin/
+            - terraform version
+            - terraform init
+            - terraform plan
+    EOF
+  }
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+  source_version = "main"
+}
+
+resource "aws_codebuild_project" "example1" {
+  name         = var.codebuild_project_apply
   service_role = aws_iam_role.example.arn
   environment {
     compute_type = "BUILD_GENERAL1_SMALL"
@@ -66,6 +100,7 @@ resource "aws_codepipeline" "example" {
     name = "Build"
 
     action {
+      run_order       = 2
       name            = "BuildAction"
       category        = "Build"
       owner           = "AWS"
@@ -74,6 +109,28 @@ resource "aws_codepipeline" "example" {
       input_artifacts = ["source_artifact"]
       configuration = {
         ProjectName = aws_codebuild_project.example.name
+      }
+    }
+    action {
+      run_order = 1
+      name      = "approval"
+      category  = "Approval"
+      owner     = "AWS"
+      provider  = "Manual"
+      version   = "1"
+    }
+
+action {
+      run_order        = 3
+      name             = "terraform-apply"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      input_artifacts  = ["source_artifact"]
+      output_artifacts = []
+      version          = "1"
+      configuration = {
+        ProjectName = aws_codebuild_project.example1.name
       }
     }
   }
