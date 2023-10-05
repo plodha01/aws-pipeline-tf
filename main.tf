@@ -1,4 +1,3 @@
-root@ip-172-31-27-64:~/aws-pipeline-tf# cat main.tf 
 data "aws_codecommit_repository" "repo" {
   repository_name = var.repo_name
 }
